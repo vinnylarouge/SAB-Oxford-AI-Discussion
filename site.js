@@ -43,7 +43,7 @@
     const slug = it.head ? it.head.toLowerCase().replace(/[^a-z0-9]+/g, '-') : '';
     const head = it.head ? `<span class="fi-head fh-${slug}">${esc(it.head)}</span>` : '';
     const detail = it.detail && it.type !== 'paper' ? `<div class="fi-detail">${esc(it.detail)}</div>` : '';
-    return `<div class="feed-item fi-${it.type}"><span class="fi-icon">${FEED_ICON[it.type] || '·'}</span>` +
+    return `<div class="feed-item fi-${it.type}" data-ref="${esc(it.ref || '')}"><span class="fi-icon">${FEED_ICON[it.type] || '·'}</span>` +
       `<div class="fi-main"><div class="fi-text">${head}${esc(it.text)}</div>${detail}</div></div>`;
   }
   const feedList = document.getElementById('feedList');
@@ -52,6 +52,33 @@
   const mfCards = [...mfScroll.querySelectorAll('.feed-item')];
   function renderDesktopFeed(index) { feedList.innerHTML = feed.slice(0, index + 1).reverse().map(itemHTML).join(''); feedList.scrollTop = 0; }
   function markMobile(index) { for (let i = 0; i < mfCards.length; i++) mfCards[i].classList.toggle('mf-current', i === index); }
+
+  // ---- enlarge overlay (mobile: tap a card to read it in full; dismiss on scrub) ----
+  const expand = document.createElement('div');
+  expand.id = 'mf-expand'; expand.hidden = true;
+  expand.innerHTML = '<div class="mfx-backdrop"></div><div class="mfx-card"></div>';
+  document.getElementById('app').appendChild(expand);
+  const mfxCard = expand.querySelector('.mfx-card');
+  function showExpand(idx) {
+    if (!isMobile() || idx < 0 || idx >= feed.length) return;
+    mfxCard.innerHTML = itemHTML(feed[idx]);
+    expand.hidden = false;
+    if (feed[idx].ref) LoomGraph.highlight(feed[idx].ref);
+  }
+  function hideExpand() { if (!expand.hidden) expand.hidden = true; }
+  expand.addEventListener('click', hideExpand);
+
+  // ---- feed selection → highlight the corresponding graph element ----
+  feedList.addEventListener('click', (e) => {                 // desktop: highlight + expand detail
+    const item = e.target.closest('.feed-item'); if (!item) return;
+    const wasSel = item.classList.contains('selected');
+    feedList.querySelectorAll('.feed-item.selected').forEach((el) => el.classList.remove('selected'));
+    if (!wasSel) { item.classList.add('selected'); if (item.dataset.ref) LoomGraph.highlight(item.dataset.ref); }
+  });
+  mfScroll.addEventListener('click', (e) => {                 // mobile: tap to enlarge + highlight
+    const item = e.target.closest('.feed-item'); if (!item) return;
+    showExpand(mfCards.indexOf(item));
+  });
 
   // ---- device mode ----
   const mq = window.matchMedia('(max-width: 760px)');
@@ -93,7 +120,7 @@
   let rafM = null;
   mfScroll.addEventListener('scroll', () => {
     if (rafM) return;
-    rafM = requestAnimationFrame(() => { rafM = null; currentIndex = centeredIndex(); reveal(currentIndex); hideHint(); });
+    rafM = requestAnimationFrame(() => { rafM = null; currentIndex = centeredIndex(); reveal(currentIndex); hideHint(); hideExpand(); });
   }, { passive: true });
 
   // ---- the scrubber (both modes) ----
@@ -105,7 +132,7 @@
     if (isMobile()) mfScrollToIndex(idx); else setIndex(idx);
   }
   let dragging = false;
-  track.addEventListener('pointerdown', (e) => { stopPlay(); dragging = true; try { track.setPointerCapture(e.pointerId); } catch {} scrubToClientX(e.clientX); });
+  track.addEventListener('pointerdown', (e) => { stopPlay(); hideExpand(); dragging = true; try { track.setPointerCapture(e.pointerId); } catch {} scrubToClientX(e.clientX); });
   track.addEventListener('pointermove', (e) => { if (dragging) scrubToClientX(e.clientX); });
   window.addEventListener('pointerup', () => { dragging = false; });
 
