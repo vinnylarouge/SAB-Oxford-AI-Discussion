@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <meta name="theme-color" content="#0e0f13" />
+  <title>AI Roundtable — a discussion, mapped</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ctext y='13' font-size='13'%3E%E2%9C%A6%3C/text%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="site.css" />
+  <script src="vendor/d3.v7.min.js"></script>
+</head>
+<body>
+  <div id="scroller">
+    <div id="app">
+      <header id="topbar">
+        <div class="brand"><span class="mark">✦</span><span class="title" id="sessionTitle">Live Discussion</span></div>
+        <div class="controls"><span id="counts" class="counts"></span></div>
+      </header>
+
+      <main id="stage">
+        <aside id="leftRail" class="rail">
+          <div class="rail-head">Live feed</div>
+          <div id="feedList" class="rail-body"></div>
+        </aside>
+        <section id="graphWrap">
+          <svg id="graph"></svg>
+          <div id="tooltip" class="tooltip" hidden></div>
+          <div id="legend" class="legend"></div>
+          <div id="hint">scroll to replay the discussion&nbsp;&nbsp;↓</div>
+        </section>
+      </main>
+
+      <div id="mobileFeed"></div>
+
+      <footer id="timeline">
+        <div id="tl-track" title="drag to scrub"><div id="tl-fill"></div><div id="tl-knob"></div></div>
+        <div id="tl-label"></div>
+      </footer>
+    </div>
+  </div>
+
+  <script src="graph.js"></script>
+  <script src="frozen-data.js"></script>
+  <script src="site.js"></script>
+</body>
+</html>
