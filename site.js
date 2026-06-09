@@ -68,34 +68,79 @@
     label.textContent = `${index + 1} / ${feed.length}`;
   }
 
-  // ---- scroll wiring ----
+  // ---- device mode: desktop drives the timeline via the scrubber (so the mouse
+  //      wheel stays free for graph zoom/pan); mobile drives it by page scroll. ----
+  const mq = window.matchMedia('(max-width: 760px)');
+  const isMobile = () => mq.matches;
+
+  let currentIndex = 0;
+  const hintEl = document.getElementById('hint');
+  function hideHint() { if (hintEl) hintEl.style.opacity = 0; }
+  function setIndex(index) { currentIndex = Math.max(0, Math.min(feed.length - 1, index)); reveal(currentIndex); hideHint(); }
+
+  // tall scroll area on mobile only — desktop stays exactly one screen (no page scroll)
   const scroller = document.getElementById('scroller');
   const PER_ENTRY_PX = 16;
-  function setHeight() { scroller.style.height = Math.round(window.innerHeight + feed.length * PER_ENTRY_PX) + 'px'; }
+  function setHeight() { scroller.style.height = isMobile() ? Math.round(window.innerHeight + feed.length * PER_ENTRY_PX) + 'px' : '100vh'; }
   setHeight();
   window.addEventListener('resize', () => { setHeight(); if (LoomGraph.resize) LoomGraph.resize(); });
+  mq.addEventListener('change', () => { stopPlay(); setHeight(); updateHint(); });
 
+  // mobile: scroll position drives the timeline
   function onScroll() {
+    if (!isMobile()) return;
     const max = document.documentElement.scrollHeight - window.innerHeight;
     const p = max > 0 ? window.scrollY / max : 0;
-    reveal(Math.round(p * (feed.length - 1)));
-    if (window.scrollY > 24) { const h = document.getElementById('hint'); if (h) h.style.opacity = 0; }
+    currentIndex = Math.round(p * (feed.length - 1));
+    reveal(currentIndex);
+    if (window.scrollY > 24) hideHint();
   }
   let raf = null;
   window.addEventListener('scroll', () => { if (raf) return; raf = requestAnimationFrame(() => { raf = null; onScroll(); }); }, { passive: true });
 
-  // ---- timeline drag-to-scrub ----
+  // ---- the scrubber: click + drag (desktop seeks directly; mobile syncs scroll) ----
   const track = document.getElementById('tl-track');
-  function scrubTo(clientX) {
+  function scrubToClientX(clientX) {
     const r = track.getBoundingClientRect();
     const p = Math.max(0, Math.min(1, (clientX - r.left) / r.width));
-    const max = document.documentElement.scrollHeight - window.innerHeight;
-    window.scrollTo({ top: p * max });
+    if (isMobile()) {
+      const max = document.documentElement.scrollHeight - window.innerHeight;
+      window.scrollTo({ top: p * max });
+    } else {
+      setIndex(Math.round(p * (feed.length - 1)));
+    }
   }
   let dragging = false;
-  track.addEventListener('pointerdown', (e) => { dragging = true; try { track.setPointerCapture(e.pointerId); } catch {} scrubTo(e.clientX); });
-  track.addEventListener('pointermove', (e) => { if (dragging) scrubTo(e.clientX); });
+  track.addEventListener('pointerdown', (e) => { stopPlay(); dragging = true; try { track.setPointerCapture(e.pointerId); } catch {} scrubToClientX(e.clientX); });
+  track.addEventListener('pointermove', (e) => { if (dragging) scrubToClientX(e.clientX); });
   window.addEventListener('pointerup', () => { dragging = false; });
+
+  // ---- desktop: arrow keys + play button ----
+  window.addEventListener('keydown', (e) => {
+    if (isMobile()) return;
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') { setIndex(currentIndex + 1); e.preventDefault(); }
+    else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') { setIndex(currentIndex - 1); e.preventDefault(); }
+    else if (e.key === 'Home') { setIndex(0); e.preventDefault(); }
+    else if (e.key === 'End') { setIndex(feed.length - 1); e.preventDefault(); }
+    else if (e.key === ' ') { togglePlay(); e.preventDefault(); }
+  });
+
+  const playBtn = document.getElementById('tl-play');
+  let playTimer = null;
+  function stopPlay() { if (playTimer) { clearInterval(playTimer); playTimer = null; if (playBtn) playBtn.textContent = '▶'; } }
+  function togglePlay() {
+    if (playTimer) { stopPlay(); return; }
+    if (currentIndex >= feed.length - 1) setIndex(0); // restart from the top
+    if (playBtn) playBtn.textContent = '⏸';
+    playTimer = setInterval(() => {
+      if (currentIndex >= feed.length - 1) { stopPlay(); return; }
+      setIndex(currentIndex + 1);
+    }, 480);
+  }
+  if (playBtn) playBtn.addEventListener('click', togglePlay);
+
+  function updateHint() { if (hintEl) hintEl.innerHTML = isMobile() ? 'scroll to replay the discussion&nbsp;&nbsp;↓' : 'drag the timeline, use ← →, or press ▶'; }
+  updateHint();
 
   // ---- init ----
   function init() {
