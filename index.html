@@ -31,14 +31,20 @@
         </section>
       </main>
 
-      <div id="mobileFeed"></div>
+      <div id="mobileFeed">
+        <div id="mf-handle"></div>
+        <div id="mf-scroll"></div>
+        <div id="mf-hint">swipe the feed to replay&nbsp;↕</div>
+      </div>
 
       <footer id="timeline">
         <div class="tl-row">
-          <button id="tl-play" aria-label="play / pause" title="play / pause (space)">▶</button>
+          <button id="tl-prev" class="tl-btn" title="previous (←)">‹</button>
+          <button id="tl-play" class="tl-btn tl-play" title="play / pause (space)">▶</button>
+          <button id="tl-next" class="tl-btn" title="next (→)">›</button>
           <div id="tl-track" title="click or drag to scrub"><div id="tl-fill"></div><div id="tl-knob"></div></div>
+          <span id="tl-label"></span>
         </div>
-        <div id="tl-label"></div>
       </footer>
     </div>
   </div>

@@ -1,12 +1,16 @@
-// site.js — scroll-driven replay of a frozen Loom discussion (static, no server).
-// Scroll position (or dragging the timeline) maps to an index into the activity
-// feed; the graph and feed are revealed up to that point in timestamp order.
+// site.js — scroll-free, control-driven replay of a frozen Loom discussion.
+//
+// ONE consistent model: a single `currentIndex` into the activity feed drives the
+// graph + feed. It is changed only by explicit controls —
+//   desktop : ◀ / ▶ step buttons, play/pause, click+drag the scrubber, arrow keys
+//   mobile  : swipe the bottom feed sheet (snaps entry-by-entry), or drag the scrubber
+// Nothing hijacks page or wheel scroll, so the graph keeps its own zoom/pan.
 (function () {
   const S = window.FROZEN;
   if (!S) return;
   document.getElementById('sessionTitle').textContent = (S.session && S.session.title) || 'Live Discussion';
 
-  // ---- data prep ----
+  // ---- data ----
   const anchors = S.themes.filter((t) => t.kind === 'anchor');
   const emergent = S.themes.filter((t) => t.kind !== 'anchor');
   const notes = [...S.notes].filter((n) => n.ts);
@@ -14,13 +18,12 @@
   const frames = [...(S.frames || [])].filter((f) => f.ts);
   const feed = [...(S.feed || [])].filter((f) => f.ts).sort((a, b) => (a.ts < b.ts ? -1 : 1));
   const noteTs = new Map(S.notes.map((n) => [n.id, n.ts]));
-  const themeTs = new Map(); // a theme "appears" with its earliest member note
+  const themeTs = new Map();
   for (const t of emergent) {
     let m = null;
     for (const nid of t.noteIds) { const ts = noteTs.get(nid); if (ts && (m === null || ts < m)) m = ts; }
     themeTs.set(t.id, m);
   }
-
   function graphAt(T) {
     const revNotes = notes.filter((n) => n.ts <= T);
     const revNoteIds = new Set(revNotes.map((n) => n.id));
@@ -44,109 +47,108 @@
       `<div class="fi-main"><div class="fi-text">${head}${esc(it.text)}</div>${detail}</div></div>`;
   }
   const feedList = document.getElementById('feedList');
-  const mobileFeed = document.getElementById('mobileFeed');
-  function renderFeed(index) {
-    feedList.innerHTML = feed.slice(0, index + 1).reverse().map(itemHTML).join('');
-    feedList.scrollTop = 0;
-    mobileFeed.innerHTML = itemHTML(feed[index]); // single current entry on mobile
-  }
+  const mfScroll = document.getElementById('mf-scroll');
+  mfScroll.innerHTML = feed.map(itemHTML).join('');                 // all cards (mobile sheet), once
+  const mfCards = [...mfScroll.querySelectorAll('.feed-item')];
+  function renderDesktopFeed(index) { feedList.innerHTML = feed.slice(0, index + 1).reverse().map(itemHTML).join(''); feedList.scrollTop = 0; }
+  function markMobile(index) { for (let i = 0; i < mfCards.length; i++) mfCards[i].classList.toggle('mf-current', i === index); }
 
-  // ---- reveal at a feed index ----
-  let lastIndex = -1;
+  // ---- device mode ----
+  const mq = window.matchMedia('(max-width: 760px)');
+  const isMobile = () => mq.matches;
+
+  // ---- the single source of truth ----
   const fill = document.getElementById('tl-fill');
   const knob = document.getElementById('tl-knob');
   const label = document.getElementById('tl-label');
+  const hintEl = document.getElementById('hint');
+  let currentIndex = 0, lastRendered = -1;
+  const clamp = (i) => Math.max(0, Math.min(feed.length - 1, i));
   function reveal(index) {
-    index = Math.max(0, Math.min(feed.length - 1, index));
-    if (index === lastIndex) return;
-    lastIndex = index;
+    if (index === lastRendered) return;
+    lastRendered = index;
     LoomGraph.update(graphAt(feed[index].ts));
-    renderFeed(index);
     const p = feed.length <= 1 ? 1 : index / (feed.length - 1);
     fill.style.width = (p * 100) + '%';
     knob.style.left = (p * 100) + '%';
     label.textContent = `${index + 1} / ${feed.length}`;
+    if (isMobile()) markMobile(index); else renderDesktopFeed(index);
   }
+  function setIndex(index) { currentIndex = clamp(index); reveal(currentIndex); hideHint(); }
+  function hideHint() { if (hintEl) hintEl.style.opacity = 0; const mh = document.getElementById('mf-hint'); if (mh) mh.style.opacity = 0; }
 
-  // ---- device mode: desktop drives the timeline via the scrubber (so the mouse
-  //      wheel stays free for graph zoom/pan); mobile drives it by page scroll. ----
-  const mq = window.matchMedia('(max-width: 760px)');
-  const isMobile = () => mq.matches;
-
-  let currentIndex = 0;
-  const hintEl = document.getElementById('hint');
-  function hideHint() { if (hintEl) hintEl.style.opacity = 0; }
-  function setIndex(index) { currentIndex = Math.max(0, Math.min(feed.length - 1, index)); reveal(currentIndex); hideHint(); }
-
-  // tall scroll area on mobile only — desktop stays exactly one screen (no page scroll)
-  const scroller = document.getElementById('scroller');
-  const PER_ENTRY_PX = 16;
-  function setHeight() { scroller.style.height = isMobile() ? Math.round(window.innerHeight + feed.length * PER_ENTRY_PX) + 'px' : '100vh'; }
-  setHeight();
-  window.addEventListener('resize', () => { setHeight(); if (LoomGraph.resize) LoomGraph.resize(); });
-  mq.addEventListener('change', () => { stopPlay(); setHeight(); updateHint(); });
-
-  // mobile: scroll position drives the timeline
-  function onScroll() {
-    if (!isMobile()) return;
-    const max = document.documentElement.scrollHeight - window.innerHeight;
-    const p = max > 0 ? window.scrollY / max : 0;
-    currentIndex = Math.round(p * (feed.length - 1));
-    reveal(currentIndex);
-    if (window.scrollY > 24) hideHint();
+  // ---- mobile: swipe the feed sheet ----
+  function centeredIndex() {
+    const r = mfScroll.getBoundingClientRect();
+    const cy = r.top + r.height / 2;
+    let best = 0, bestD = Infinity;
+    for (let i = 0; i < mfCards.length; i++) {
+      const cr = mfCards[i].getBoundingClientRect();
+      const d = Math.abs((cr.top + cr.bottom) / 2 - cy);
+      if (d < bestD) { bestD = d; best = i; }
+    }
+    return best;
   }
-  let raf = null;
-  window.addEventListener('scroll', () => { if (raf) return; raf = requestAnimationFrame(() => { raf = null; onScroll(); }); }, { passive: true });
+  function mfScrollToIndex(index) { const c = mfCards[index]; if (c) c.scrollIntoView({ block: 'center' }); }
+  let rafM = null;
+  mfScroll.addEventListener('scroll', () => {
+    if (rafM) return;
+    rafM = requestAnimationFrame(() => { rafM = null; currentIndex = centeredIndex(); reveal(currentIndex); hideHint(); });
+  }, { passive: true });
 
-  // ---- the scrubber: click + drag (desktop seeks directly; mobile syncs scroll) ----
+  // ---- the scrubber (both modes) ----
   const track = document.getElementById('tl-track');
   function scrubToClientX(clientX) {
     const r = track.getBoundingClientRect();
     const p = Math.max(0, Math.min(1, (clientX - r.left) / r.width));
-    if (isMobile()) {
-      const max = document.documentElement.scrollHeight - window.innerHeight;
-      window.scrollTo({ top: p * max });
-    } else {
-      setIndex(Math.round(p * (feed.length - 1)));
-    }
+    const idx = Math.round(p * (feed.length - 1));
+    if (isMobile()) mfScrollToIndex(idx); else setIndex(idx);
   }
   let dragging = false;
   track.addEventListener('pointerdown', (e) => { stopPlay(); dragging = true; try { track.setPointerCapture(e.pointerId); } catch {} scrubToClientX(e.clientX); });
   track.addEventListener('pointermove', (e) => { if (dragging) scrubToClientX(e.clientX); });
   window.addEventListener('pointerup', () => { dragging = false; });
 
-  // ---- desktop: arrow keys + play button ----
+  // ---- desktop transport: ◀ ▶ + play + arrow keys ----
+  const prevBtn = document.getElementById('tl-prev');
+  const nextBtn = document.getElementById('tl-next');
+  const playBtn = document.getElementById('tl-play');
+  prevBtn.addEventListener('click', () => { stopPlay(); setIndex(currentIndex - 1); });
+  nextBtn.addEventListener('click', () => { stopPlay(); setIndex(currentIndex + 1); });
   window.addEventListener('keydown', (e) => {
-    if (isMobile()) return;
-    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') { setIndex(currentIndex + 1); e.preventDefault(); }
-    else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') { setIndex(currentIndex - 1); e.preventDefault(); }
-    else if (e.key === 'Home') { setIndex(0); e.preventDefault(); }
-    else if (e.key === 'End') { setIndex(feed.length - 1); e.preventDefault(); }
+    if (e.key === 'ArrowRight') { stopPlay(); setIndex(currentIndex + 1); e.preventDefault(); }
+    else if (e.key === 'ArrowLeft') { stopPlay(); setIndex(currentIndex - 1); e.preventDefault(); }
+    else if (e.key === 'Home') { stopPlay(); setIndex(0); e.preventDefault(); }
+    else if (e.key === 'End') { stopPlay(); setIndex(feed.length - 1); e.preventDefault(); }
     else if (e.key === ' ') { togglePlay(); e.preventDefault(); }
   });
-
-  const playBtn = document.getElementById('tl-play');
   let playTimer = null;
-  function stopPlay() { if (playTimer) { clearInterval(playTimer); playTimer = null; if (playBtn) playBtn.textContent = '▶'; } }
+  function stopPlay() { if (playTimer) { clearInterval(playTimer); playTimer = null; playBtn.textContent = '▶'; } }
   function togglePlay() {
     if (playTimer) { stopPlay(); return; }
-    if (currentIndex >= feed.length - 1) setIndex(0); // restart from the top
-    if (playBtn) playBtn.textContent = '⏸';
+    if (currentIndex >= feed.length - 1) setIndex(0);
+    playBtn.textContent = '⏸';
     playTimer = setInterval(() => {
       if (currentIndex >= feed.length - 1) { stopPlay(); return; }
       setIndex(currentIndex + 1);
     }, 480);
   }
-  if (playBtn) playBtn.addEventListener('click', togglePlay);
+  playBtn.addEventListener('click', togglePlay);
 
-  function updateHint() { if (hintEl) hintEl.innerHTML = isMobile() ? 'scroll to replay the discussion&nbsp;&nbsp;↓' : 'drag the timeline, use ← →, or press ▶'; }
-  updateHint();
+  // ---- hint text per device ----
+  function updateHint() { if (hintEl) hintEl.innerHTML = isMobile() ? 'swipe the feed to replay&nbsp;↕' : 'press ▶, step ◀ ▶, or drag the timeline'; }
+
+  mq.addEventListener('change', () => {
+    stopPlay(); updateHint(); lastRendered = -1; reveal(currentIndex);
+    if (isMobile()) mfScrollToIndex(currentIndex);
+  });
 
   // ---- init ----
   function init() {
     if (LoomGraph.resize) LoomGraph.resize();
+    updateHint();
     reveal(0);
-    onScroll();
+    if (isMobile()) { mfScrollToIndex(0); markMobile(0); }
   }
   setTimeout(init, 120);
 })();

@@ -1,65 +1,90 @@
-/* site.css — scrollytelling layout layered on top of the app's style.css */
+/* site.css — replay layout layered on top of the app's style.css.
+   One consistent model: the timeline is driven only by explicit controls
+   (desktop: ◀ ▶ + play + scrubber + arrow keys; mobile: swipe the feed sheet
+   + scrubber). The graph keeps its own zoom/pan; nothing else hijacks scroll. */
 
-/* style.css locks the body to a fixed full-screen app; the site must scroll. */
-html, body { overflow: visible; height: auto; }
-body { display: block; background: #0e0f13; }
-
-#scroller { width: 100%; }                  /* tall — height set by site.js */
+html, body { overflow: hidden; height: 100%; margin: 0; background: #0e0f13; }
+#scroller { height: 100%; }
 #app {
-  position: sticky; top: 0;
   height: 100vh; height: 100dvh;
-  display: flex; flex-direction: column;
-  overflow: hidden;
+  display: flex; flex-direction: column; overflow: hidden;
 }
 
 #stage { flex: 1 1 auto; min-height: 0; }   /* style.css makes it a 340 / 1fr grid */
 #graphWrap { position: relative; }
 
-/* intro hint */
+/* intro hint (over the graph) */
 #hint {
   position: absolute; left: 50%; top: 44%; transform: translate(-50%, -50%);
-  color: #e7e3d8; font-size: 17px; letter-spacing: .3px; white-space: nowrap;
-  background: rgba(14, 15, 19, .62); padding: 13px 20px; border-radius: 12px;
+  color: #e7e3d8; font-size: 16px; letter-spacing: .3px; white-space: nowrap;
+  background: rgba(14, 15, 19, .62); padding: 12px 19px; border-radius: 12px;
   pointer-events: none; transition: opacity .6s ease; backdrop-filter: blur(3px);
 }
 
-/* timeline scrubber */
-#timeline { flex: 0 0 auto; padding: 13px 22px 16px; background: linear-gradient(0deg, #15171e, #101218); border-top: 1px solid #262a34; }
-.tl-row { display: flex; align-items: center; gap: 14px; }
-#tl-play {
-  flex: 0 0 auto; width: 36px; height: 36px; border-radius: 50%;
+/* ---- timeline transport ---- */
+#timeline { flex: 0 0 auto; padding: 12px 22px 15px; background: linear-gradient(0deg, #15171e, #101218); border-top: 1px solid #262a34; }
+.tl-row { display: flex; align-items: center; gap: 11px; }
+.tl-btn {
+  flex: 0 0 auto; width: 34px; height: 34px; border-radius: 50%;
   border: 1px solid #3a4150; background: #1a1d26; color: #e7e3d8;
-  font-size: 14px; cursor: pointer; transition: border-color .15s, background .15s;
-  display: flex; align-items: center; justify-content: center; padding: 0;
+  font-size: 17px; line-height: 1; cursor: pointer; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  transition: border-color .15s, background .15s; user-select: none;
 }
-#tl-play:hover { border-color: #e8b04b; background: #20232e; }
+.tl-btn:hover { border-color: #e8b04b; background: #20232e; }
+.tl-btn:active { background: #2a2e38; }
+.tl-play { color: #e8b04b; font-size: 14px; }
 #tl-track { flex: 1 1 auto; position: relative; height: 8px; background: #262a34; border-radius: 6px; cursor: pointer; touch-action: none; }
 #tl-fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: linear-gradient(90deg, #4ea0e0, #e8b04b); border-radius: 6px; }
-#tl-knob { position: absolute; top: 50%; left: 0; width: 17px; height: 17px; margin-left: -8px; transform: translateY(-50%); border-radius: 50%; background: #f0ede5; box-shadow: 0 1px 5px rgba(0, 0, 0, .6); }
-#tl-label { margin-top: 9px; font-size: 12.5px; color: #9a9789; text-align: center; font-variant-numeric: tabular-nums; }
+#tl-knob { position: absolute; top: 50%; left: 0; width: 16px; height: 16px; margin-left: -8px; transform: translateY(-50%); border-radius: 50%; background: #f0ede5; box-shadow: 0 1px 5px rgba(0, 0, 0, .6); }
+#tl-label { flex: 0 0 auto; min-width: 64px; font-size: 12.5px; color: #9a9789; text-align: right; font-variant-numeric: tabular-nums; }
 
-/* mobile single-entry feed panel (hidden on desktop) */
+/* desktop feed rail is a read-only display (does not drive the timeline) */
+#feedList { overscroll-behavior: contain; }
+
+/* mobile sheet hidden on desktop */
 #mobileFeed { display: none; }
 
 @media (max-width: 760px) {
-  #stage { display: block; }                /* graph fills the stage */
-  #leftRail { display: none; }              /* no streaming list on a phone */
+  #stage { display: block; }                 /* graph fills the stage */
+  #leftRail { display: none; }               /* no streaming list on a phone */
   #graphWrap { height: 100%; }
   #topbar { height: 48px; flex-basis: 48px; padding: 0 16px; }
   #topbar .brand .title { font-size: 16px; }
   #counts { font-size: 11px; }
   .legend { font-size: 9.5px; gap: 8px; padding: 4px 7px; bottom: 8px; left: 8px; }
 
-  /* one feed entry at a time, pinned at the bottom */
+  /* mobile uses swipe + scrubber, not the transport buttons */
+  #tl-prev, #tl-next, #tl-play { display: none; }
+  #timeline { padding: 10px 16px 13px; }
+  #tl-label { min-width: 56px; }
+
+  /* bottom-sheet feed swiper — the timeline scrubbing surface on mobile */
   #mobileFeed {
-    display: block; flex: 0 0 auto; min-height: 88px;
-    padding: 12px 16px 13px; border-top: 1px solid #262a34;
+    display: block; flex: 0 0 31vh; height: 31vh; min-height: 0; overflow: hidden;
+    position: relative;
     background: linear-gradient(0deg, #14161c, #0f1116);
+    border-top: 1px solid #2a2e38; border-radius: 16px 16px 0 0;
+    box-shadow: 0 -8px 22px rgba(0, 0, 0, .4);
   }
-  #mobileFeed .feed-item { animation: rise .35s ease; border: none; padding: 0; background: none; }
-  #mobileFeed .fi-icon { font-size: 16px; }
-  #mobileFeed .fi-text { font-size: 16px; line-height: 1.34; }
-  #mobileFeed .fi-detail { font-size: 13.5px; -webkit-line-clamp: 3; margin-top: 3px; }
-  #timeline { padding: 11px 16px 14px; }
-  #tl-play { display: none; }   /* mobile advances by scrolling */
+  #mf-handle { position: absolute; top: 7px; left: 50%; transform: translateX(-50%); width: 40px; height: 4px; border-radius: 3px; background: #3a4150; z-index: 4; }
+  #mf-scroll {
+    height: 100%; overflow-y: scroll; scroll-snap-type: y mandatory;
+    -webkit-overflow-scrolling: touch; padding: 22px 18px 18px; scrollbar-width: none;
+  }
+  #mf-scroll::-webkit-scrollbar { width: 0; height: 0; }
+  #mf-scroll .feed-item {
+    scroll-snap-align: center; min-height: calc(31vh - 56px);
+    display: flex; align-items: center; gap: 11px; border: none; padding: 6px 0; background: none;
+    opacity: .38; transform: scale(.97); transition: opacity .25s ease, transform .25s ease;
+  }
+  #mf-scroll .feed-item.mf-current { opacity: 1; transform: none; }
+  #mf-scroll .fi-icon { font-size: 17px; }
+  #mf-scroll .fi-text { font-size: 16.5px; line-height: 1.34; }
+  #mf-scroll .fi-detail { font-size: 14px; -webkit-line-clamp: 3; margin-top: 4px; }
+  /* fade edges signal there's more to swipe */
+  #mobileFeed::before, #mobileFeed::after { content: ''; position: absolute; left: 0; right: 0; height: 28px; pointer-events: none; z-index: 3; }
+  #mobileFeed::before { top: 0; background: linear-gradient(#0f1116, transparent); border-radius: 16px 16px 0 0; }
+  #mobileFeed::after { bottom: 0; background: linear-gradient(transparent, #0f1116); }
+  #mf-hint { position: absolute; bottom: 5px; left: 50%; transform: translateX(-50%); font-size: 11px; color: #9a9789; z-index: 4; transition: opacity .5s ease; pointer-events: none; }
 }
